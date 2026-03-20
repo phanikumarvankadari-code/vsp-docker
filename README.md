@@ -113,6 +113,24 @@ The AI only sends/receives the method block (~30 lines). vsp fetches the full cl
 
 > *Built-in ABAP parser based on [abaplint](https://github.com/abaplint/abaplint) by [Lars Hvam](https://github.com/larshp) — the same parser that powers abaplint's 392 ABAP statement types.*
 
+### Native Go ABAP Lexer — abaplint in Go
+
+The [abaplint](https://github.com/abaplint/abaplint) lexer has been mechanically ported from TypeScript to native Go (`pkg/abaplint`). This is the same lexer that powers abaplint — 48 token types, all 6 lexer modes (normal, string, backtick, template, comment, pragma), with full whitespace-context encoding.
+
+**Verified via oracle-based differential testing** against the real TypeScript abaplint:
+
+```
+=== DIFFERENTIAL KPI ===
+Files:   29/29 passed (100.0%)
+Tokens:  22,612 total
+  Full match:  22,612 (100.0%)  — str + type + row + col
+  Str match:   22,612 (100.0%)
+  Type match:  22,612 (100.0%)
+  Pos match:   22,612 (100.0%)
+```
+
+Zero dependencies, zero FFI. Pure Go, ~3.5M tokens/sec, ready for lint rules in Phase 2.
+
 ### ABAP LSP — Real-Time Diagnostics
 
 `vsp lsp --stdio` gives Claude Code (and other editors) **automatic** error detection and navigation for ABAP files. No explicit tool calls — the LSP pushes diagnostics on every save and compressed dependency context on file open.

@@ -434,6 +434,10 @@ func (s *Server) handleGetContext(ctx context.Context, request mcp.CallToolReque
 	if md, ok := request.Params.Arguments["max_deps"].(float64); ok && md > 0 {
 		maxDeps = int(md)
 	}
+	depth := 1
+	if d, ok := request.Params.Arguments["depth"].(float64); ok && d > 0 {
+		depth = int(d)
+	}
 
 	// Fetch source from SAP if not provided
 	if source == "" {
@@ -445,7 +449,7 @@ func (s *Server) handleGetContext(ctx context.Context, request mcp.CallToolReque
 	}
 
 	provider := ctxcomp.NewMultiSourceProvider("", &adtSourceAdapter{server: s})
-	compressor := ctxcomp.NewCompressor(provider, maxDeps)
+	compressor := ctxcomp.NewCompressor(provider, maxDeps).WithDepth(depth)
 	result, err := compressor.Compress(ctx, source, name, objectType)
 	if err != nil {
 		return newToolResultError(fmt.Sprintf("GetContext failed: %v", err)), nil

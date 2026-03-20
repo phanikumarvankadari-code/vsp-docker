@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.31.0] - 2026-03-20
+### Features
+
+- **Native Go ABAP Lexer** (`pkg/abaplint`): Mechanical port of the [abaplint](https://github.com/abaplint/abaplint) TypeScript lexer to native Go. 48 token types, 6 lexer modes (normal, string, backtick, template, comment, pragma), whitespace-context encoding. Oracle-verified: 100% match on 22,612 tokens across 29 ABAP files. ~3.5M tokens/sec, zero dependencies.
+- **Dependency Context Depth** (`pkg/ctxcomp`): `GetContext` now supports `depth` parameter (1-3) for multi-level dependency expansion. Level 1 = direct deps (default), level 2 = deps of deps, level 3 = three levels deep. Tracks visited objects to avoid cycles, shares maxDeps budget across levels.
+- **Oracle Differential Testing Framework** (`pkg/abaplint/testdata/oracle.js`): Node.js script runs the real TypeScript abaplint on ABAP files, generates JSON fixtures. Go tests compare token-by-token: string, type, row, col. Reports per-file and aggregate KPIs (str/type/pos match rates).
+
 ## [2.30.0] - 2026-03-20
 ### Features
 
