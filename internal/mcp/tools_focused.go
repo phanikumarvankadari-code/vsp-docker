@@ -115,6 +115,10 @@ func focusedToolSet() map[string]bool {
 		"GetRevisionSource": true, // Get source of a specific version
 		"CompareVersions":   true, // Compare two versions with diff
 
+		// Testing & Quality (2)
+		"GetCodeCoverage":    true, // Run tests with line-level coverage
+		"GetCheckRunResults": true, // Detailed check run findings
+
 		// CTS/Transport Management (2 read-only in focused mode)
 		"ListTransports": true, // List transport requests
 		"GetTransport":   true, // Get transport details with objects

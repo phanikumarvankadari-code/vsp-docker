@@ -67,6 +67,17 @@ func (s *Server) routeReadAction(ctx context.Context, action, objectType, object
 				args["sql_query"] = v
 			}
 			return s.callHandler(ctx, s.handleGetTableContents, args)
+		case "COVERAGE":
+			args := map[string]any{"object_url": objectName}
+			if v, ok := getBoolParam(params, "include_dangerous"); ok {
+				args["include_dangerous"] = v
+			}
+			if v, ok := getBoolParam(params, "include_long"); ok {
+				args["include_long"] = v
+			}
+			return s.callHandler(ctx, s.handleGetCodeCoverage, args)
+		case "CHECK_RUN":
+			return s.callHandler(ctx, s.handleGetCheckRunResults, map[string]any{"check_run_id": objectName})
 		}
 	}
 
