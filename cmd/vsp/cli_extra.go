@@ -156,6 +156,26 @@ Examples:
 	RunE: runGraphWhereUsedConfig,
 }
 
+var slimCmd = &cobra.Command{
+	Use:   "slim <package>",
+	Short: "Find dead code in a package (read-only analysis)",
+	Long: `Scan a package for dead-code candidates based on static references.
+
+V1 reports custom objects with zero static incoming references in CROSS/WBCROSSGT.
+Method-level slimming is planned, but not exposed as reliable v1 output yet.
+This is read-only cleanup intelligence, not deletion advice. Dynamic/framework entry
+points may still exist and are not fully visible to static indexes yet.
+
+This is read-only: no objects are deleted. Use the report to decide what to clean up.
+
+Examples:
+  vsp slim '$ZDEV'
+  vsp slim '$ZDEV' --include-subpackages
+  vsp slim '$ZDEV' --format json`,
+	Args: cobra.ExactArgs(1),
+	RunE: runSlim,
+}
+
 var examplesCmd = &cobra.Command{
 	Use:   "examples <type> <name>",
 	Short: "Find real usage examples of an ABAP object (FM, method, SUBMIT, FORM)",
@@ -188,6 +208,11 @@ func init() {
 	examplesCmd.Flags().Int("top", 10, "Maximum examples to show")
 	examplesCmd.Flags().String("format", "text", "Output format: text or json")
 	rootCmd.AddCommand(examplesCmd)
+
+	// Slim command (top-level)
+	slimCmd.Flags().Bool("include-subpackages", false, "Include subpackages")
+	slimCmd.Flags().String("format", "text", "Output format: text or json")
+	rootCmd.AddCommand(slimCmd)
 
 	// Graph flags
 	graphCmd.Flags().String("direction", "callees", "Direction: callees, callers, or both")
@@ -1015,6 +1040,159 @@ func runGraphCoChange(cmd *cobra.Command, args []string) error {
 		tableRows,
 	))
 	fmt.Fprintf(os.Stderr, "\n%d co-changing objects\n", len(result.CoChanges))
+	return nil
+}
+
+// --- slim handler ---
+
+func runSlim(cmd *cobra.Command, args []string) error {
+	params, err := resolveSystemParams(cmd)
+	if err != nil {
+		return err
+	}
+	client, err := getClient(params)
+	if err != nil {
+		return err
+	}
+
+	pkg := strings.ToUpper(args[0])
+	inclSub, _ := cmd.Flags().GetBool("include-subpackages")
+	format, _ := cmd.Flags().GetString("format")
+	ctx := context.Background()
+
+	// Step 1: Get objects in package
+	fmt.Fprintf(os.Stderr, "Loading package %s...\n", pkg)
+	packWhere := fmt.Sprintf("DEVCLASS = '%s'", pkg)
+	if inclSub {
+		packWhere = fmt.Sprintf("DEVCLASS LIKE '%s%%'", pkg)
+	}
+	tadirResult, err := client.RunQuery(ctx,
+		fmt.Sprintf("SELECT OBJECT, OBJ_NAME, DEVCLASS FROM TADIR WHERE %s AND PGMID = 'R3TR'", packWhere), 1000)
+	if err != nil {
+		return fmt.Errorf("TADIR query failed: %w", err)
+	}
+	if tadirResult == nil || len(tadirResult.Rows) == 0 {
+		return fmt.Errorf("package %s is empty or not found", pkg)
+	}
+
+	var objects []graph.SlimObjectInfo
+	objNames := make(map[string]bool)
+	for _, row := range tadirResult.Rows {
+		ot := strings.TrimSpace(fmt.Sprintf("%v", row["OBJECT"]))
+		nm := strings.TrimSpace(fmt.Sprintf("%v", row["OBJ_NAME"]))
+		dv := strings.TrimSpace(fmt.Sprintf("%v", row["DEVCLASS"]))
+		if nm == "" {
+			continue
+		}
+		objects = append(objects, graph.SlimObjectInfo{
+			Name:    strings.ToUpper(nm),
+			Type:    strings.ToUpper(ot),
+			Package: strings.ToUpper(dv),
+		})
+		objNames[strings.ToUpper(nm)] = true
+	}
+	fmt.Fprintf(os.Stderr, "Found %d objects.\n", len(objects))
+
+	// Step 2: Query reverse references for ALL objects in package
+	fmt.Fprintf(os.Stderr, "Querying reverse references...\n")
+	var allRefs []graph.SlimRefRow
+
+	nameList := make([]string, 0, len(objNames))
+	for nm := range objNames {
+		nameList = append(nameList, nm)
+	}
+
+	// Batch query WBCROSSGT: who references these objects?
+	batchSize := 50
+	for i := 0; i < len(nameList); i += batchSize {
+		end := i + batchSize
+		if end > len(nameList) {
+			end = len(nameList)
+		}
+		batch := nameList[i:end]
+
+		var likeConds []string
+		for _, nm := range batch {
+			likeConds = append(likeConds, fmt.Sprintf("NAME LIKE '%s%%'", nm))
+		}
+
+		wbQuery := fmt.Sprintf("SELECT INCLUDE, NAME FROM WBCROSSGT WHERE (%s)", strings.Join(likeConds, " OR "))
+		wbResult, err := client.RunQuery(ctx, wbQuery, 5000)
+		if err == nil && wbResult != nil {
+			for _, row := range wbResult.Rows {
+				allRefs = append(allRefs, graph.SlimRefRow{
+					CallerInclude: strings.TrimSpace(fmt.Sprintf("%v", row["INCLUDE"])),
+					TargetName:    strings.TrimSpace(fmt.Sprintf("%v", row["NAME"])),
+					Source:        "WBCROSSGT",
+				})
+			}
+		}
+
+		// Also CROSS for procedural refs
+		var crossConds []string
+		for _, nm := range batch {
+			crossConds = append(crossConds, fmt.Sprintf("NAME LIKE '%s%%'", nm))
+		}
+
+		crossQuery := fmt.Sprintf("SELECT INCLUDE, NAME FROM CROSS WHERE (%s)", strings.Join(crossConds, " OR "))
+		crossResult, err := client.RunQuery(ctx, crossQuery, 5000)
+		if err == nil && crossResult != nil {
+			for _, row := range crossResult.Rows {
+				allRefs = append(allRefs, graph.SlimRefRow{
+					CallerInclude: strings.TrimSpace(fmt.Sprintf("%v", row["INCLUDE"])),
+					TargetName:    strings.TrimSpace(fmt.Sprintf("%v", row["NAME"])),
+					Source:        "CROSS",
+				})
+			}
+		}
+	}
+	fmt.Fprintf(os.Stderr, "Collected %d reverse references.\n", len(allRefs))
+
+	// Step 3: Compute slim report
+	result := graph.ComputeSlim(objects, allRefs, nil)
+	result.Scope = pkg
+
+	// Output
+	if format == "json" {
+		data, err := json.MarshalIndent(result, "", "  ")
+		if err != nil {
+			return err
+		}
+		fmt.Println(string(data))
+		return nil
+	}
+
+	// Text output
+	fmt.Printf("Slim Report: %s (%d objects: %d live, %d dead candidates)\n\n",
+		result.Scope, result.TotalObjects, result.LiveObjectCount, result.DeadObjectCount)
+
+	if result.DeadObjectCount == 0 && result.DeadMethodCount == 0 {
+		fmt.Println("No dead code found. Package is clean.")
+		return nil
+	}
+
+	if result.DeadObjectCount > 0 {
+		fmt.Printf("Dead object candidates (%d) — zero static incoming references:\n", result.DeadObjectCount)
+		for _, d := range result.DeadObjects {
+			pkg := d.Package
+			if pkg == "" {
+				pkg = "-"
+			}
+			fmt.Printf("  %s %s %s [%s] [%s]\n", "❌", d.Type, d.Name, pkg, d.Confidence)
+		}
+		fmt.Println()
+	}
+
+	if result.DeadMethodCount > 0 {
+		fmt.Printf("Dead methods (%d) — zero external callers, not from interfaces:\n", result.DeadMethodCount)
+		for _, d := range result.DeadMethods {
+			fmt.Printf("  %s %s=>%s [%s]\n", "⚠️", d.Name, d.Method, d.Confidence)
+		}
+		fmt.Println()
+	}
+
+	fmt.Fprintf(os.Stderr, "Summary: %d dead candidates, %d dead methods, %d live objects\n",
+		result.DeadObjectCount, result.DeadMethodCount, result.LiveObjectCount)
 	return nil
 }
 
