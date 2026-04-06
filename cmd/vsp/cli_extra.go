@@ -164,11 +164,11 @@ func init() {
 
 	// Graph co-change subcommand
 	graphCoChangeCmd.Flags().Int("top", 20, "Maximum results (0=all)")
-	graphCoChangeCmd.Flags().String("format", "text", "Output format: text or json")
+	graphCoChangeCmd.Flags().String("format", "text", "Output format: text, json, mermaid, or html")
 	graphCmd.AddCommand(graphCoChangeCmd)
 
 	// Graph where-used-config subcommand
-	graphWhereUsedConfigCmd.Flags().String("format", "text", "Output format: text or json")
+	graphWhereUsedConfigCmd.Flags().String("format", "text", "Output format: text, json, mermaid, or html")
 	graphWhereUsedConfigCmd.Flags().Bool("no-grep", false, "Skip source grep (faster, MEDIUM confidence only)")
 	graphCmd.AddCommand(graphWhereUsedConfigCmd)
 
@@ -937,16 +937,25 @@ func runGraphCoChange(cmd *cobra.Command, args []string) error {
 	result := graph.WhatChangesWith(g, targetNodeID, topN)
 
 	// Output
-	if format == "json" {
+	switch format {
+	case "json":
 		data, err := json.MarshalIndent(result, "", "  ")
 		if err != nil {
 			return err
 		}
 		fmt.Println(string(data))
 		return nil
+	case "mermaid":
+		fmt.Println(graph.CoChangeToMermaid(result))
+		return nil
+	case "html":
+		mmd := graph.CoChangeToMermaid(result)
+		title := fmt.Sprintf("Co-change: %s (%d transports)", targetNodeID, result.TotalTransports)
+		fmt.Println(graph.WrapMermaidHTML(title, mmd))
+		return nil
 	}
 
-	// Text output
+	// Text output (default)
 	fmt.Printf("Co-change analysis: %s\n", targetNodeID)
 	fmt.Printf("Transports: %d\n\n", result.TotalTransports)
 
@@ -1065,16 +1074,25 @@ func runGraphWhereUsedConfig(cmd *cobra.Command, args []string) error {
 	result := graph.WhereUsedConfig(g, variable)
 
 	// Output
-	if format == "json" {
+	switch format {
+	case "json":
 		data, err := json.MarshalIndent(result, "", "  ")
 		if err != nil {
 			return err
 		}
 		fmt.Println(string(data))
 		return nil
+	case "mermaid":
+		fmt.Println(graph.ConfigUsageToMermaid(result))
+		return nil
+	case "html":
+		mmd := graph.ConfigUsageToMermaid(result)
+		title := fmt.Sprintf("Config readers: %s", variable)
+		fmt.Println(graph.WrapMermaidHTML(title, mmd))
+		return nil
 	}
 
-	// Text output
+	// Text output (default)
 	fmt.Printf("Where-used config: %s\n", variable)
 	fmt.Printf("Found: %v\n\n", result.Found)
 
