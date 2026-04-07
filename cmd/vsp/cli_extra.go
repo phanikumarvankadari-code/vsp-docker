@@ -1327,117 +1327,40 @@ func runSlim(cmd *cobra.Command, args []string) error {
 		inclSub = false
 	}
 
-	// Step 1: Resolve package scope via TDEVC hierarchy
+	// Step 1: Resolve package scope via shared helper (TDEVC hierarchy + fallback)
 	fmt.Fprintf(os.Stderr, "Resolving package scope for %s...\n", pkg)
-
-	var scope *graph.PackageScope
-	if !inclSub {
-		scope = graph.ResolvePackageScope(pkg, true, nil) // exact package only
-	} else {
-		// Try TDEVC hierarchy first — fetch all potentially related packages
-		// We use broad LIKE on DEVCLASS to catch both direct children and
-		// packages linked via PARENTCL. The ResolvePackageScope function
-		// will then walk the hierarchy tree correctly.
-		tdevcResult, tdevcErr := client.RunQuery(ctx,
-			fmt.Sprintf("SELECT DEVCLASS, PARENTCL FROM TDEVC WHERE DEVCLASS LIKE '%s%%'", pkg), 500)
-		if tdevcErr == nil && tdevcResult != nil && len(tdevcResult.Rows) > 0 {
-			var tdevcRows []graph.TDEVCRow
-			for _, row := range tdevcResult.Rows {
-				tdevcRows = append(tdevcRows, graph.TDEVCRow{
-					DevClass: strings.TrimSpace(fmt.Sprintf("%v", row["DEVCLASS"])),
-					ParentCL: strings.TrimSpace(fmt.Sprintf("%v", row["PARENTCL"])),
-				})
-			}
-			scope = graph.ResolvePackageScope(pkg, false, tdevcRows)
-			fmt.Fprintf(os.Stderr, "Scope resolved via TDEVC hierarchy: %d packages (%s)\n",
-				len(scope.Packages), strings.Join(scope.Packages, ", "))
-		} else {
-			// Fallback to LIKE prefix if TDEVC not queryable
-			fmt.Fprintf(os.Stderr, "TDEVC not available, falling back to LIKE prefix\n")
-			scope = graph.ResolvePackageScope(pkg, false, nil)
-		}
-	}
-
-	// Query TADIR for objects in all scope packages
-	var packWhere string
-	if len(scope.Packages) == 1 {
-		packWhere = fmt.Sprintf("DEVCLASS = '%s'", scope.Packages[0])
-	} else {
-		quoted := make([]string, len(scope.Packages))
-		for i, p := range scope.Packages {
-			quoted[i] = fmt.Sprintf("'%s'", p)
-		}
-		packWhere = fmt.Sprintf("DEVCLASS IN (%s)", strings.Join(quoted, ","))
-	}
-
-	fmt.Fprintf(os.Stderr, "Loading objects...\n")
-	tadirResult, err := client.RunQuery(ctx,
-		fmt.Sprintf("SELECT OBJECT, OBJ_NAME, DEVCLASS FROM TADIR WHERE %s AND PGMID = 'R3TR'", packWhere), 1000)
+	scope, err := AcquirePackageScope(ctx, client, pkg, inclSub)
 	if err != nil {
-		return fmt.Errorf("TADIR query failed: %w", err)
+		return fmt.Errorf("scope resolution failed: %w", err)
 	}
-	if tadirResult == nil || len(tadirResult.Rows) == 0 {
+	fmt.Fprintf(os.Stderr, "Scope: %d packages (%s)\n", len(scope.Packages), scope.Method)
+
+	// Step 1b: Fetch objects via shared helper
+	fmt.Fprintf(os.Stderr, "Loading objects...\n")
+	pkgObjects, err := AcquirePackageObjects(ctx, client, ScopeToWhere(scope))
+	if err != nil {
+		return fmt.Errorf("object fetch failed: %w", err)
+	}
+	if len(pkgObjects) == 0 {
 		return fmt.Errorf("package %s is empty or not found", pkg)
 	}
 
+	// Convert to SlimObjectInfo + build name set
 	var objects []graph.SlimObjectInfo
 	objNames := make(map[string]bool)
-	for _, row := range tadirResult.Rows {
-		ot := strings.TrimSpace(fmt.Sprintf("%v", row["OBJECT"]))
-		nm := strings.TrimSpace(fmt.Sprintf("%v", row["OBJ_NAME"]))
-		dv := strings.TrimSpace(fmt.Sprintf("%v", row["DEVCLASS"]))
-		if nm == "" {
-			continue
-		}
+	nameList := make([]string, 0, len(pkgObjects))
+	for _, obj := range pkgObjects {
 		objects = append(objects, graph.SlimObjectInfo{
-			Name:    strings.ToUpper(nm),
-			Type:    strings.ToUpper(ot),
-			Package: strings.ToUpper(dv),
+			Name: obj.Name, Type: obj.Type, Package: obj.Package,
 		})
-		objNames[strings.ToUpper(nm)] = true
+		objNames[obj.Name] = true
+		nameList = append(nameList, obj.Name)
 	}
 	fmt.Fprintf(os.Stderr, "Found %d objects.\n", len(objects))
 
-	// Step 2: Query reverse references for ALL objects in package
+	// Step 2: Query reverse references via shared helper
 	fmt.Fprintf(os.Stderr, "Querying reverse references...\n")
-	var allRefs []graph.SlimRefRow
-
-	nameList := make([]string, 0, len(objNames))
-	for nm := range objNames {
-		nameList = append(nameList, nm)
-	}
-
-	// Query reverse refs per object (ADT freestyle doesn't support OR with LIKE)
-	for idx, nm := range nameList {
-		fmt.Fprintf(os.Stderr, "\r  [%d/%d] %s", idx+1, len(nameList), nm)
-
-		// WBCROSSGT: OO references
-		wbQuery := fmt.Sprintf("SELECT INCLUDE, NAME FROM WBCROSSGT WHERE NAME LIKE '%s%%'", nm)
-		wbResult, err := client.RunQuery(ctx, wbQuery, 500)
-		if err == nil && wbResult != nil {
-			for _, row := range wbResult.Rows {
-				allRefs = append(allRefs, graph.SlimRefRow{
-					CallerInclude: strings.TrimSpace(fmt.Sprintf("%v", row["INCLUDE"])),
-					TargetName:    strings.TrimSpace(fmt.Sprintf("%v", row["NAME"])),
-					Source:        "WBCROSSGT",
-				})
-			}
-		}
-
-		// CROSS: procedural references
-		crossQuery := fmt.Sprintf("SELECT INCLUDE, NAME FROM CROSS WHERE NAME LIKE '%s%%'", nm)
-		crossResult, err := client.RunQuery(ctx, crossQuery, 500)
-		if err == nil && crossResult != nil {
-			for _, row := range crossResult.Rows {
-				allRefs = append(allRefs, graph.SlimRefRow{
-					CallerInclude: strings.TrimSpace(fmt.Sprintf("%v", row["INCLUDE"])),
-					TargetName:    strings.TrimSpace(fmt.Sprintf("%v", row["NAME"])),
-					Source:        "CROSS",
-				})
-			}
-		}
-	}
-	fmt.Fprintf(os.Stderr, "\r")
+	allRefs := AcquireReverseRefs(ctx, client, nameList, true)
 	fmt.Fprintf(os.Stderr, "Collected %d reverse references.\n", len(allRefs))
 
 	// Step 2.5: Collect method info for non-dead classes (if --level methods or full)

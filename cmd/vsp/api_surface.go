@@ -107,32 +107,27 @@ func runAPISurface(cmd *cobra.Command, args []string) error {
 }
 
 func loadAPISurfacePackageObjects(ctx context.Context, client *adt.Client, pkg string, includeSub bool) (map[string]bool, []apiSurfacePkgObj, error) {
-	packWhere := fmt.Sprintf("DEVCLASS = '%s'", pkg)
-	if includeSub {
-		packWhere = fmt.Sprintf("DEVCLASS LIKE '%s%%'", pkg)
+	// Use shared scope + object acquisition
+	scope, err := AcquirePackageScope(ctx, client, pkg, includeSub)
+	if err != nil {
+		return nil, nil, fmt.Errorf("scope resolution failed: %w", err)
 	}
 
-	fmt.Fprintf(os.Stderr, "Loading package %s...\n", pkg)
-	tadirResult, err := client.RunQuery(ctx,
-		fmt.Sprintf("SELECT OBJECT, OBJ_NAME, DEVCLASS FROM TADIR WHERE %s AND PGMID = 'R3TR'", packWhere), 1000)
+	fmt.Fprintf(os.Stderr, "Loading package %s (%d packages in scope)...\n", pkg, len(scope.Packages))
+	pkgObjects, err := AcquirePackageObjects(ctx, client, ScopeToWhere(scope))
 	if err != nil {
-		return nil, nil, fmt.Errorf("TADIR query failed: %w", err)
+		return nil, nil, err
 	}
-	if tadirResult == nil || len(tadirResult.Rows) == 0 {
+	if len(pkgObjects) == 0 {
 		return nil, nil, fmt.Errorf("package %s is empty or not found", pkg)
 	}
 
-	customObjects := make(map[string]bool, len(tadirResult.Rows))
-	objects := make([]apiSurfacePkgObj, 0, len(tadirResult.Rows))
-	for _, row := range tadirResult.Rows {
-		objType := strings.ToUpper(strings.TrimSpace(fmt.Sprintf("%v", row["OBJECT"])))
-		objName := strings.ToUpper(strings.TrimSpace(fmt.Sprintf("%v", row["OBJ_NAME"])))
-		if objName == "" {
-			continue
-		}
-		customObjects[objName] = true
-		if isSourceBearingAPISurfaceObject(objType) {
-			objects = append(objects, apiSurfacePkgObj{objType: objType, name: objName})
+	customObjects := make(map[string]bool, len(pkgObjects))
+	objects := make([]apiSurfacePkgObj, 0, len(pkgObjects))
+	for _, obj := range pkgObjects {
+		customObjects[obj.Name] = true
+		if IsSourceBearing(obj.Type) {
+			objects = append(objects, apiSurfacePkgObj{objType: obj.Type, name: obj.Name})
 		}
 	}
 	return customObjects, objects, nil
@@ -157,14 +152,7 @@ func fetchAPISurfaceRows(ctx context.Context, client *adt.Client, objects []apiS
 	return rows, nil
 }
 
-func isSourceBearingAPISurfaceObject(objType string) bool {
-	switch objType {
-	case "CLAS", "PROG", "INTF", "FUGR":
-		return true
-	default:
-		return false
-	}
-}
+// isSourceBearingAPISurfaceObject removed — use shared IsSourceBearing() from acquire.go
 
 func apiSurfaceCallerInclude(obj apiSurfacePkgObj) string {
 	switch obj.objType {
