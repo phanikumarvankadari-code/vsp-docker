@@ -13,6 +13,9 @@
 
 ## Hot Right Now
 
+- `vsp changelog '$ZDEV'` for package-level transport history grouped by request
+- `vsp changes '$ZDEV' --attribute SAPTEST` for CR-level change grouping via CTS request attributes
+- `.vsp.json` `transport_attribute` and `VSP_TRANSPORT_ATTRIBUTE` for per-system change-correlation config
 - `vsp graph co-change CLAS ZCL_FOO` for transport-based co-change analysis
 - `vsp graph where-used-config ZKEKEKE` for heuristic TVARVC usage discovery
 - `vsp api-surface '$ZDEV'` for top standard SAP API inventory used by a custom package
