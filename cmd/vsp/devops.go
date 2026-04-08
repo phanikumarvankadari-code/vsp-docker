@@ -200,13 +200,19 @@ func runBoundaries(cmd *cobra.Command, args []string) error {
 
 	// Handle --report flag
 	if report != "" {
+		baseName := strings.ReplaceAll(pkg, "$", "_") + "_boundaries"
 		if strings.HasSuffix(report, ".md") {
 			format = "md"
+		} else if strings.HasSuffix(report, ".html") {
+			format = "html"
 		} else if report == "md" {
 			format = "md"
-			report = strings.ReplaceAll(pkg, "$", "_") + "_boundaries.md"
+			report = baseName + ".md"
+		} else if report == "html" {
+			format = "html"
+			report = baseName + ".html"
 		} else {
-			return fmt.Errorf("unsupported report format %q (want md or filename.md)", report)
+			return fmt.Errorf("unsupported report format %q (want md, html, or filename.md/.html)", report)
 		}
 		f, err := os.Create(report)
 		if err != nil {
@@ -215,7 +221,14 @@ func runBoundaries(cmd *cobra.Command, args []string) error {
 		defer f.Close()
 		origStdout := os.Stdout
 		os.Stdout = f
-		printCrossingsMD(crossReport)
+		switch format {
+		case "md":
+			printCrossingsMD(crossReport)
+		case "html":
+			mmd := graph.CrossingToMermaid(crossReport, scope)
+			title := fmt.Sprintf("Boundaries: %s", pkg)
+			fmt.Println(graph.WrapMermaidHTML(title, mmd))
+		}
 		os.Stdout = origStdout
 		fmt.Fprintf(os.Stderr, "Report saved to %s\n", report)
 		return nil
@@ -230,6 +243,12 @@ func runBoundaries(cmd *cobra.Command, args []string) error {
 		fmt.Println(string(data))
 	case "md":
 		printCrossingsMD(crossReport)
+	case "mermaid":
+		fmt.Println(graph.CrossingToMermaid(crossReport, scope))
+	case "html":
+		mmd := graph.CrossingToMermaid(crossReport, scope)
+		title := fmt.Sprintf("Boundaries: %s", pkg)
+		fmt.Println(graph.WrapMermaidHTML(title, mmd))
 	default:
 		printCrossingsText(crossReport)
 	}
@@ -494,7 +513,7 @@ func init() {
 	rootCmd.AddCommand(testCmd)
 	rootCmd.AddCommand(atcCmd)
 	rootCmd.AddCommand(healthCmd)
-	boundariesCmd.Flags().String("format", "text", "Output format: text, json, or md")
+	boundariesCmd.Flags().String("format", "text", "Output format: text, json, md, mermaid, or html")
 	boundariesCmd.Flags().String("report", "", "Save report to file: md or filename.md")
 	boundariesCmd.Flags().Bool("exact", false, "Check only the exact package, no subpackages")
 	rootCmd.AddCommand(boundariesCmd)
