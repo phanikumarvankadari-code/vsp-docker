@@ -171,7 +171,7 @@ func runBoundaries(cmd *cobra.Command, args []string) error {
 		if !IsSourceBearing(obj.Type) {
 			continue
 		}
-		fmt.Fprintf(os.Stderr, "\r  [%d] %s %s", count+1, obj.Type, obj.Name)
+		fmt.Fprintf(os.Stderr, "\r  [%d] %s %-40s", count+1, obj.Type, obj.Name)
 		source, err := client.GetSource(ctx, obj.Type, obj.Name, nil)
 		if err != nil || source == "" {
 			continue
@@ -1161,7 +1161,7 @@ func collectPackageBoundariesWithDetails(ctx context.Context, client *adt.Client
 		if count >= 50 {
 			break
 		}
-		fmt.Fprintf(os.Stderr, "\r    [%d] %s %s", count+1, obj.Type, obj.Name)
+		fmt.Fprintf(os.Stderr, "\r    [%d] %s %-40s", count+1, obj.Type, obj.Name)
 		source, err := client.GetSource(ctx, obj.Type, obj.Name, nil)
 		if err != nil || source == "" {
 			continue
