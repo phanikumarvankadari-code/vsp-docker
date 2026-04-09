@@ -110,10 +110,10 @@ read_manifest() {
 
 # Prompt for mode selection
 select_mode() {
-    echo -e "\n${YELLOW}Available vsp modes:${NC}"
-    echo "1) hyperfocused (1 universal tool - recommended)"
-    echo "2) focused (81 essential tools)"
-    echo "3) expert (122 all tools, including experimental)"
+    echo -e "\n${YELLOW}Available vsp modes:${NC}" >&2
+    echo "1) hyperfocused (1 universal tool - recommended)" >&2
+    echo "2) focused (81 essential tools)" >&2
+    echo "3) expert (122 all tools, including experimental)" >&2
     read -p "Select mode [1]: " mode_choice
     mode_choice=${mode_choice:-1}
 
@@ -127,10 +127,10 @@ select_mode() {
 
 # Prompt for setup method
 select_setup_method() {
-    echo -e "\n${YELLOW}How would you like to run vsp?${NC}"
-    echo "1) Docker Compose (recommended - container name: vsp)"
-    echo "2) Direct Docker (docker run)"
-    echo "3) Local binary (CLI mode)"
+    echo -e "\n${YELLOW}How would you like to run vsp?${NC}" >&2
+    echo "1) Docker Compose (recommended - container name: vsp)" >&2
+    echo "2) Direct Docker (docker run)" >&2
+    echo "3) Local binary (CLI mode)" >&2
     read -p "Select setup method [1]: " method_choice
     method_choice=${method_choice:-1}
     echo "$method_choice"
@@ -139,7 +139,7 @@ select_setup_method() {
 # Prompt for client selection
 select_clients() {
     local platform="$1"
-    echo -e "\n${YELLOW}Select clients to register with:${NC}"
+    echo -e "\n${YELLOW}Select clients to register with:${NC}" >&2
 
     local claude_available=0
     local gemini_available=0
@@ -160,31 +160,31 @@ select_clients() {
     declare -a clients
 
     if [ $claude_available -eq 1 ]; then
-        echo "$idx) Claude Desktop ${GREEN}(detected)${NC}"
+        echo "$idx) Claude Desktop ${GREEN}(detected)${NC}" >&2
         clients[$idx]="claude"
         ((idx++))
     else
-        echo "$idx) Claude Desktop"
+        echo "$idx) Claude Desktop" >&2
         clients[$idx]="claude"
         ((idx++))
     fi
 
     if [ $gemini_available -eq 1 ]; then
-        echo "$idx) Google Gemini ${GREEN}(detected)${NC}"
+        echo "$idx) Google Gemini ${GREEN}(detected)${NC}" >&2
         clients[$idx]="gemini"
         ((idx++))
     else
-        echo "$idx) Google Gemini"
+        echo "$idx) Google Gemini" >&2
         clients[$idx]="gemini"
         ((idx++))
     fi
 
     if [ $copilot_available -eq 1 ]; then
-        echo "$idx) GitHub Copilot ${GREEN}(detected)${NC}"
+        echo "$idx) GitHub Copilot ${GREEN}(detected)${NC}" >&2
         clients[$idx]="copilot"
         ((idx++))
     else
-        echo "$idx) GitHub Copilot"
+        echo "$idx) GitHub Copilot" >&2
         clients[$idx]="copilot"
         ((idx++))
     fi

@@ -2,6 +2,7 @@ version: '3.8'
 
 services:
   vsp:
+    container_name: vsp_s4h
     build:
       context: .
       dockerfile: Dockerfile
