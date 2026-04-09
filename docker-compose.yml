@@ -1,0 +1,42 @@
+version: '3.8'
+
+services:
+  vsp:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    stdin_open: true
+    tty: false
+    # MCP servers communicate via stdio, so no port exposure needed
+
+    environment:
+      # SAP Connection (set these via .env file or override here)
+      SAP_URL: ${SAP_URL:-http://localhost:50000}
+      SAP_USER: ${SAP_USER:-DEVELOPER}
+      SAP_PASSWORD: ${SAP_PASSWORD:-password}
+      SAP_CLIENT: ${SAP_CLIENT:-001}
+      SAP_LANGUAGE: ${SAP_LANGUAGE:-EN}
+
+      # VSP Configuration
+      VSP_MODE: ${VSP_MODE:-hyperfocused}
+      VSP_READ_ONLY: ${VSP_READ_ONLY:-false}
+      VSP_ALLOWED_PACKAGES: ${VSP_ALLOWED_PACKAGES:-}
+      VSP_DISABLED_GROUPS: ${VSP_DISABLED_GROUPS:-}
+
+    # Optional: Use .env file for secrets
+    env_file:
+      - .env.docker
+
+    # Uncomment to mount local .vsp.json for multi-system profiles
+    # volumes:
+    #   - ./.vsp.json:/etc/vsp/.vsp.json:ro
+
+    # Resource limits for safe dev environment
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+        reservations:
+          cpus: '0.5'
+          memory: 256M

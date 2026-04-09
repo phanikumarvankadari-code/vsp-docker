@@ -1,0 +1,100 @@
+# MCP Server Configuration for Claude Desktop / mcp-toolkit
+#
+# This file registers vsp as an MCP server for Claude Desktop.
+# Copy the vsp section below to your Claude Desktop configuration:
+#   - macOS: ~/Library/Application Support/Claude/claude_desktop_config.json
+#   - Windows: %APPDATA%\Claude\claude_desktop_config.json
+#   - Linux: ~/.config/Claude/claude_desktop_config.json
+#
+# Convert to JSON format (Claude Desktop uses JSON, not YAML).
+# See: https://github.com/anthropics/anthropic-sdk-python/blob/main/README.md#mcp
+#
+# ===== OPTION 1: Docker Compose (Recommended for Local Development) =====
+#
+# First, build and start the container:
+#   docker-compose up -d
+#
+# Then add this to your claude_desktop_config.json:
+
+{
+  "mcpServers": {
+    "vsp": {
+      "command": "docker",
+      "args": [
+        "exec",
+        "-i",
+        "vibing-steampunk-vsp-1",
+        "vsp"
+      ],
+      "env": {
+        "VSP_MODE": "hyperfocused"
+      }
+    }
+  }
+}
+
+# ===== OPTION 2: Direct Docker (No Compose) =====
+#
+# Build the image first:
+#   docker build -t vsp:latest .
+#
+# Then add this to your claude_desktop_config.json:
+
+{
+  "mcpServers": {
+    "vsp": {
+      "command": "docker",
+      "args": [
+        "run",
+        "--rm",
+        "-i",
+        "--env-file",
+        "/path/to/.env.docker",
+        "vsp:latest"
+      ]
+    }
+  }
+}
+
+# ===== OPTION 3: Local Binary (No Docker) =====
+#
+# If you have vsp binary in your PATH or locally:
+#   go build -o vsp ./cmd/vsp
+#
+# Then add this to your claude_desktop_config.json:
+
+{
+  "mcpServers": {
+    "vsp": {
+      "command": "/path/to/vsp",
+      "env": {
+        "SAP_URL": "http://your-sap-host:50000",
+        "SAP_USER": "DEVELOPER",
+        "SAP_PASSWORD": "password",
+        "SAP_CLIENT": "001",
+        "VSP_MODE": "hyperfocused"
+      }
+    }
+  }
+}
+
+# ===== Environment Variables =====
+#
+# SAP_URL              SAP ADT REST API endpoint (required)
+# SAP_USER             SAP username (required)
+# SAP_PASSWORD         SAP password (required)
+# SAP_CLIENT           SAP client number (optional, defaults to 001)
+# SAP_LANGUAGE         SAP language (optional, defaults to EN)
+# SAP_INSECURE         Skip TLS verification if true (optional, defaults to false)
+#
+# VSP_MODE             "focused" (81 tools), "expert" (122 tools), "hyperfocused" (1 tool, recommended)
+# VSP_READ_ONLY        Set to true to block all writes (optional, defaults to false)
+# VSP_ALLOWED_PACKAGES Comma-separated allowlist (e.g., "Z*,$TMP") (optional)
+# VSP_DISABLED_GROUPS  Tool groups to disable (e.g., "5THD") (optional)
+#
+# ===== Quick Test =====
+#
+# After registering in Claude Desktop config, restart Claude Desktop and ask:
+#   "List the tools available from the SAP(vsp) server"
+#
+# You should see the hyperfocused mode's single SAP tool with all available actions.
